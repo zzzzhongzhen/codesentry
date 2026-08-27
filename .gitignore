@@ -1,0 +1,13 @@
+# 隐私铁律:任何 CoinEx 派生物绝不进 git
+.env
+chroma_db/
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
