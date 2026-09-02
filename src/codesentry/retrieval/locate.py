@@ -38,3 +38,34 @@ def build_index(chunks: list[CodeChunk], embed_fn: EmbedFn, collection) -> None:
         documents=docs,
         metadatas=metadatas
     )
+
+
+def locate(bug_text: str, collection, embed_fn: EmbedFn, k: int = 5) -> list[dict]:
+    """按 bug 描述,查出最可疑的 k 个代码块;返回带定位信息的字典列表(按相似度)。"""
+    q_vec = embed_fn(bug_text)
+    res = collection.query(
+        query_embeddings=[q_vec],
+        n_results=k,
+        include=["documents", "metadatas", "distances"],
+    )
+    # res 的每个字段都套了一层"批次"维度,取 [0](呼应你 28/40 号):
+    #   res["documents"][0]  / res["metadatas"][0]  / res["distances"][0]  一一对应
+    # ══════════════════════════════════════════════════════
+    # 该你写:遍历这三个并列的列表,每个命中组装成一个 dict:
+    #     {"path":.., "start_line":.., "symbol":.., "code":.., "distance":..}
+    #   path/start_line/symbol 从 metadata 取;code 从 documents 取;distance 从 distances 取
+    #   返回这些 dict 的列表(已按相似度排好,Chroma 返回就是近→远)
+    #   提示:zip(res["documents"][0], res["metadatas"][0], res["distances"][0]) 三个并排遍历
+    # ══════════════════════════════════════════════════════
+    result = []
+    for doc, metadata, distance in zip(res['documents'][0], res['metadatas'][0], res['distances'][0]):
+        result.append({
+            'path': metadata['path'],
+            'start_line': metadata['start_line'],
+            'end_line': metadata['end_line'],
+            'symbol': metadata['symbol'],
+            'kind': metadata['kind'],
+            'code': doc,
+            'distance': distance
+        })
+    return result
