@@ -1,9 +1,14 @@
 """走通骨架 CLI:给一个 bug 描述 → 打印最可疑的代码位置。
 
-运行:uv run python scripts/triage_skeleton.py
-前提:.env 里要有 SILICONFLOW_API_KEY(embed 用);REPO_PATH 默认指向 tests/fixtures/repo。
-把 7 个模块串起来:walk_repo → get_chunker.chunk → build_index → locate。
+指哪打哪(命令行参数):
+  uv run python scripts/triage_skeleton.py --repo ~/some/ios-repo --bug "下拉刷新崩溃"
+  可选:--k 5(返回几个)  --reindex(强制重建索引)
+前提:.env 里有 SILICONFLOW_API_KEY。
 """
+
+import argparse
+import hashlib
+import os
 
 import chromadb
 
@@ -13,31 +18,46 @@ from codesentry.config import REPO_PATH
 from codesentry.retrieval.embed import embed
 from codesentry.retrieval.locate import build_index, locate
 
-# 骨架期:硬编码一个 bug 描述(以后从 ClickUp 拉)
-BUG = "下拉刷新时偶发崩溃"
+
+def collection_name_for(repo: str) -> str:
+    """每个 repo 一个独立 collection 名字(拿绝对路径算哈希),切库不会复用错索引。"""
+    h = hashlib.sha1(os.path.abspath(repo).encode()).hexdigest()[:16]
+    return f"repo_{h}"
 
 
 def main():
-    # ① 遍历 repo → 切块(walk_repo 拉一个,get_chunker 挑切块器,chunk 切)
-    chunks = []
-    for path, content in walk_repo(REPO_PATH):
-        chunks.extend(get_chunker(path).chunk(content, path))
-    print(f"📂 {REPO_PATH}:切出 {len(chunks)} 块代码")
+    # ── 命令行参数解析 ──
+    parser = argparse.ArgumentParser(description="CodeSentry 骨架:bug → 可疑代码定位")
+    parser.add_argument("--repo", default=REPO_PATH, help="要分析的代码库路径")
+    parser.add_argument("--bug", required=True, help="bug 描述(必填)")
+    parser.add_argument("--k", type=int, default=5, help="返回前几个可疑块(默认 5)")
+    parser.add_argument("--reindex", action="store_true", help="强制重建索引")
+    args = parser.parse_args()
 
-    # ② 建/取索引(持久化到 chroma_db/,已 gitignore)
-    col = chromadb.PersistentClient(path="chroma_db").get_or_create_collection(
-        "codesentry", metadata={"hnsw:space": "cosine"}
-    )
+    # ① 遍历 → 切块
+    chunks = []
+    for path, content in walk_repo(args.repo):
+        chunks.extend(get_chunker(path).chunk(content, path))
+    print(f"📂 {args.repo}:切出 {len(chunks)} 块代码")
+
+    # ② 建/取【这个 repo 专属】的索引
+    client = chromadb.PersistentClient(path="chroma_db")
+    name = collection_name_for(args.repo)
+    if args.reindex:
+        try:
+            client.delete_collection(name)
+        except Exception:
+            pass  # 本来就没有,忽略
+    col = client.get_or_create_collection(name, metadata={"hnsw:space": "cosine"})
     if col.count() == 0:
         print("🔧 建索引中(每块 embed,联网,大 repo 要等)...")
         build_index(chunks, embed, col)
     else:
-        print(f"♻️  复用已有索引({col.count()} 块);想重建就删掉 chroma_db/ 再跑")
+        print(f"♻️  复用该 repo 已有索引({col.count()} 块);加 --reindex 强制重建")
 
-    # ③ 定位:按 bug 查最可疑的 5 块
-    print(f"\n🔎 bug:{BUG}\n")
-    hits = locate(BUG, col, embed, k=5)
-    for h in hits:
+    # ③ 定位
+    print(f"\n🔎 bug:{args.bug}\n")
+    for h in locate(args.bug, col, embed, args.k):
         print(f"  {h['path']}:{h['start_line']}  {h['symbol']}  (距离 {h['distance']:.3f})")
 
 
