@@ -8,10 +8,10 @@ from pathlib import Path
 
 from codesentry.chunking.base import CodeChunker
 from codesentry.chunking.naive import NaiveChunker
+from codesentry.chunking.swift import SwiftChunker
 
-# 骨架期:还没有 SwiftChunker,注册表先空着,全部回退 NaiveChunker。
-# SwiftChunker 实现后,这里加一行:".swift": SwiftChunker()
-_REGISTRY: dict[str, CodeChunker] = {}
+# .swift 走 AST 切块;其余后缀回退 NaiveChunker。加语言 = 往这塞一行。
+_REGISTRY: dict[str, CodeChunker] = {".swift": SwiftChunker()}
 _FALLBACK: CodeChunker = NaiveChunker()
 
 

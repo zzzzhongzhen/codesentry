@@ -21,4 +21,4 @@ def walk_repo(root: str, ext: str = ".swift") -> Iterator[tuple[str, str]]:
     for p in Path(root).rglob('*'+ext):
         content = p.read_text(encoding='utf-8')
         rel = str(p.relative_to(root))
-        yield rel, content    
+        yield (rel, content)   
