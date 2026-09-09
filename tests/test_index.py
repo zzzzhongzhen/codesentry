@@ -28,6 +28,17 @@ def test_build_index_adds_all_chunks():
     assert col.count() == 2
 
 
+def test_build_index_handles_large_repo_over_chroma_limit():
+    # 复现大 repo 崩溃:Chroma 一次 add 上限 5461,超了必须分批
+    col = _new_collection()
+    chunks = [
+        CodeChunk(f"F{i}.swift", 1, 2, f"f{i}", "func", None, f"code{i}", "swift")
+        for i in range(6000)
+    ]
+    build_index(chunks, _fake_embed, col)   # 不分批的话这里会崩
+    assert col.count() == 6000
+
+
 def test_build_index_stores_path_metadata():
     col = _new_collection()
     chunks = [CodeChunk("Login.swift", 42, 50, "submit()", "func", None, "code", "swift")]

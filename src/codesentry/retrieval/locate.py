@@ -9,6 +9,7 @@ from codesentry.chunking.base import CodeChunk
 
 EmbedFn = Callable[[str], list[float]]  # "吃一段文本、吐一个向量"的函数类型
 
+BATCH = 5000
 
 def build_index(chunks: list[CodeChunk], embed_fn: EmbedFn, collection) -> None:
     """把每个 CodeChunk embed 后存进 Chroma collection。"""
@@ -32,12 +33,15 @@ def build_index(chunks: list[CodeChunk], embed_fn: EmbedFn, collection) -> None:
         'path': chunk.path, 'start_line': chunk.start_line, 'end_line': chunk.end_line,
         'symbol': chunk.symbol, 'kind': chunk.kind
     } for chunk in chunks]
-    collection.add(
-        ids=ids,
-        embeddings=vecs,
-        documents=docs,
-        metadatas=metadatas
-    )
+
+    # 分批次加向量防止chorma报错
+    for i in range(0, len(ids), BATCH):
+        collection.add(
+            ids=ids[i:i+BATCH],
+            embeddings=vecs[i:i+BATCH],
+            documents=docs[i:i+BATCH],
+            metadatas=metadatas[i:i+BATCH]
+        )
 
 
 def locate(bug_text: str, collection, embed_fn: EmbedFn, k: int = 5) -> list[dict]:
